@@ -1,0 +1,50 @@
+<scene version="2.1.0">
+
+<!-- Defaults, these can be set via the command line: -Darg=value -->
+
+
+<!-- Camera and Rendering Parameters -->
+
+	<integrator type="volpath" id="integrator" name="integrator">
+		<integer name="max_depth" value="2"/>
+		<boolean name="hide_emitters" value="true"/>
+	</integrator>
+
+<!-- Materials -->
+
+
+<!-- Emitters -->
+
+	<emitter type="constant" id="emitter" name="emitter">
+		<float name="radiance" value="1.000000"/>
+	</emitter>
+	<emitter type="spot" id="emitterspot" name="emitterspot">
+		<transform name="to_world">
+			<matrix value="0.707107 -0.408248 -0.577350 10.000000 -0.707107 -0.408248 -0.577350 10.000000 0.000000 0.816496 -0.577350 10.000000 0.000000 0.000000 0.000000 1.000000"/>
+		</transform>
+		<rgb value="1.000000 0.100000 0.200000" name="intensity"/>
+	</emitter>
+
+<!-- Shapes -->
+
+	<shape type="cube" id="object" name="object">
+		<bsdf type="null" name="bsdf"/>
+		<medium type="heterogeneous" name="interior">
+			<volume type="gridtest" name="sigma_t">
+				<integer name="grid_n" value="0"/>
+				<string name="grid_type" value="float"/>
+				<string name="vdb_filename" value="./vdbfiles/converted.nvdb"/>
+				<transform name="to_world">
+					<matrix value="499.999969 0.000000 0.000000 -99999.992188 0.000000 -0.000022 -500.000000 -100000.007812 0.000000 500.000000 -0.000022 99999.992188 0.000000 0.000000 0.000000 1.000000"/>
+				</transform>
+			</volume>
+			<float name="albedo" value="0.999000"/>
+		</medium>
+		<transform name="to_world">
+			<matrix value="500.000000 0.000000 0.000000 0.000000 0.000000 500.000000 0.000000 0.000000 0.000000 0.000000 500.000000 0.000000 0.000000 0.000000 0.000000 1.000000"/>
+		</transform>
+	</shape>
+
+<!-- Volumes -->
+
+</scene>
