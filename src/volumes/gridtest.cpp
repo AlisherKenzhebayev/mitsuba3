@@ -88,7 +88,7 @@ public:
 
         m_nanoHandle = nanovdb::io::readGrid(file_path, grid_n, true);
         if(m_nanoHandle){
-            m_bboxNano = m_nanoHandle.gridMetaData()->worldBBox();
+            m_bboxVdb = m_nanoHandle.gridMetaData()->indexBBox();
             uint8_t *pGridData = m_nanoHandle.data();
             assert (pGridData != 0); 
             m_pGridData32 = (uint32_t*) pGridData;
@@ -271,11 +271,21 @@ public:
         float y = *(pData+1);
         float z = pData[2];
 
+        // TODO: Variant1 - no world->index
         // Fix this by using the bbox values?
-        pnanoCoordinateTest.x = int32_t(x * 100.f);
-        pnanoCoordinateTest.y = int32_t(y * 100.f);
-        pnanoCoordinateTest.z = int32_t(z * 100.f);
+        auto min = m_bboxVdb.min();
+        auto res = resolution(); // Order is 2-1-0 in resolution() -> need to swap x,z
+        pnanoCoordinateTest.x = int32_t(z * res[2] + (int)min[0]);
+        pnanoCoordinateTest.y = int32_t(y * res[1] + (int)min[1]);
+        pnanoCoordinateTest.z = int32_t(x * res[0] + (int)min[2]);
 
+        // // TODO: Variant2 - world_to_index from point3f->int. Possible loss of precision?
+        // pnanovdb_vec3_t inputCoord = {x, y, z}; //struct float3 x, y, z
+        // pnanovdb_vec3_t vecCoord = pnanovdb_grid_world_to_indexf(m_pnanoBuf, m_pnanoGridHandle, &inputCoord);
+        // pnanoCoordinateTest.x = int32_t(vecCoord.x);
+        // pnanoCoordinateTest.y = int32_t(vecCoord.y);
+        // pnanoCoordinateTest.z = int32_t(vecCoord.z);
+        
         pnanovdb_address_t pnanoAddress = pnanovdb_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
         uint64_t offset = pnanoAddress.byte_offset;
 
@@ -318,18 +328,22 @@ public:
     //         out[i] = m_max_per_channel[i];
     // }
 
-    // ScalarVector3i resolution() const override {
-    //     const size_t *shape = m_texture.shape();
-    //     return { (int) shape[2], (int) shape[1], (int) shape[0] };
-    // };
+    ScalarVector3i resolution() const override {
+        auto minBboxVdb = m_bboxVdb.min();
+        auto maxBboxVdb = m_bboxVdb.max();
+        return 
+            { (int) (maxBboxVdb[2] - minBboxVdb[2]), 
+              (int) (maxBboxVdb[1] - minBboxVdb[1]), 
+              (int) (maxBboxVdb[0] - minBboxVdb[0]) };
+    };
 
     std::string to_string() const override {
         std::ostringstream oss;
         oss << "GridTest[" << std::endl
             << "  to_local = " << string::indent(m_to_local, 13) << "," << std::endl
             << "  bbox = " << string::indent(m_bbox) << "," << std::endl
-            << "  bboxNano = " << string::indent(m_bboxNano) << "," << std::endl
-            // << "  dimensions = " << resolution() << "," << std::endl
+            << "  bboxVdb = " << string::indent(m_bboxVdb) << "," << std::endl
+            << "  dimensions = " << resolution() << "," << std::endl
             << "  min = " << m_min << "," << std::endl
             << "  max = " << m_max << "," << std::endl
             // << "  channels = " << m_texture.shape()[3] << std::endl
@@ -379,7 +393,7 @@ protected:
     FloatArrayC m_dataCopyC;
     // Texture3f m_texture;
 
-    nanovdb::BBoxR m_bboxNano;
+    nanovdb::BBoxR m_bboxVdb;
     
     bool m_accel;
 
