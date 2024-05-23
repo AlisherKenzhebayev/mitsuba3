@@ -6,20 +6,21 @@
 #include <mitsuba/render/srgb.h>
 #include <mitsuba/render/volume.h>
 #include <mitsuba/render/volumegrid.h>
-#include <drjit/autodiff.h>
 #include <drjit/dynamic.h>
 #include <drjit/texture.h>
 
 #include <nanovdb/util/CreateNanoGrid.h>   // converter from OpenVDB to NanoVDB (includes NanoVDB.h and GridManager.h)
 #include <nanovdb/util/IO.h>
 #include <random>
+
+#include "vdb_header/impl_drjit.h"
 // #define NANOVDB_NEW_ACCESSOR_METHODS
 #define PNANOVDB_C
 #define _WIN64
 #define PNANOVDB_ADDRESS_64
 #define PNANOVDB_C
 #define PNANOVDB_BUF_BOUNDS_CHECK
-#include <nanovdb/PNanoVDB.h>
+// #include <nanovdb/PNanoVDB.h>
 
 using namespace drjit;
 
@@ -39,7 +40,7 @@ using MaskArrayL   = dr::LLVMArray<bool>;
 NAMESPACE_BEGIN(mitsuba)
 
 template <typename Float, typename Spectrum>
-class GridTest final : public Volume<Float, Spectrum> {
+class GridPnano final : public Volume<Float, Spectrum> {
 public:
     MI_IMPORT_BASE(Volume, update_bbox, m_to_local, m_bbox, m_channel_count)
     MI_IMPORT_TYPES(VolumeGrid)
@@ -48,7 +49,7 @@ public:
     static constexpr bool IsLLVM = is_llvm_v<Float>;
     static constexpr bool IsJIT = IsLLVM || IsCUDA;
 
-    GridTest(const Properties &props) : Base(props) {
+    GridPnano(const Properties &props) : Base(props) {
         // So that it matches some of grid types in PNanoVDB
         std::string allowed_grid_types[3] = {
             "unknown",
@@ -59,17 +60,16 @@ public:
         std::string grid_type_str = props.string("grid_type", "unknown");
         int index_found = -1;
         for (size_t i = 0; i < allowed_grid_types->size(); i++)
-        {
-            if(grid_type_str == allowed_grid_types[i])
-            {
+            if(allowed_grid_types[i] == grid_type_str){
                 index_found = i;
                 break;
             }
-        }
-
+        
         if(index_found == -1 || grid_type_str == "unknown")
             Throw("Invalid grid type \"%s\", must be one of allowed ones!", grid_type_str);
 
+        int grid_n = props.get<int>("grid_n", 0);
+        
         // Load openVDB data by filename
         std::string file_path = props.string("vdb_filename", "");
         if(file_path.empty()){
@@ -88,14 +88,13 @@ public:
                 "\t| " + _gridCountHandle.gridData(i)->gridName();
         }
 
-        int grid_n = props.get<int>("grid_n", 0);
         if(grid_n >= _totalGrids)
             Log(Error, "\"%d\": is not within the total #grids %d! \nCurrent data: \n%s", 
             grid_n, _totalGrids, out_meta_string);
 
         m_nanoHandle = nanovdb::io::readGrid(file_path, grid_n, true);
         if(m_nanoHandle){
-            m_bboxVdb = m_nanoHandle.gridMetaData()->indexBBox();
+            m_bboxVdb = m_nanoHandle.gridMetaData()->worldBBox();
             uint8_t *pGridData = m_nanoHandle.data();
             assert (pGridData != 0); 
             m_pGridData32 = (uint32_t*) pGridData;
@@ -166,34 +165,44 @@ public:
         }
         
         // Create a PNanoVDB handle, since it is easier to get the offset this way for the coords.
-        m_pnanoBuf = pnanovdb_make_buf(m_pGridData32, (uint64_t) m_nanoHandle.size());
-        m_pnanoGridHandle = pnanovdb_grid_handle_t();
+        
+        uint32_t byteSize = (uint64_t) m_nanoHandle.size();
+        uint32_t data32Size = byteSize / 4;
 
-        m_pnanoTreeHandle = pnanovdb_grid_get_tree(m_pnanoBuf, m_pnanoGridHandle);
-        m_pnanoRootHandle = pnanovdb_tree_get_root(m_pnanoBuf, m_pnanoTreeHandle);
+        // UInt32Jit jitDataCopy = drjit::empty<UInt32Jit>(data32Size);
+        // uint32_t* jitDataPointer = (uint32_t*) jitDataCopy.data();
+        // memcpy(jitDataCopy.data(), m_pGridData32, byteSize);
+        // UInt64Jit sizeInWords = drjit::full<UInt64Jit>(m_nanoHandle.size(), 1);
+        
+        m_pnanoBuf = drjit_make_buf(m_pGridData32, m_nanoHandle.size());
+            
+            // drjit_make_buf(m_pGridData32, (uint64_t) m_nanoHandle.size());
+        m_pnanoGridHandle = drjit_grid_handle_t();
+
+        m_pnanoTreeHandle = drjit_grid_get_tree(m_pnanoBuf, m_pnanoGridHandle);
+        m_pnanoRootHandle = drjit_tree_get_root(m_pnanoBuf, m_pnanoTreeHandle);
 
         // nanovdb::DefaultReadAccessor <float> readAccessor = float_nanoGrid->getAccessor();
+        if constexpr (IsJIT){
+                drjit_coord_t jitCoordData = { 
+                    drjit::full<Int32Jit>(1, 10), 
+                    drjit::full<Int32Jit>(1, 10), 
+                    drjit::full<Int32Jit>(1, 10) };
+                
+                char *str = strdup(jit_var_graphviz());
+                FILE *f_out = fopen("./graphviz.txt", "wb");
+                fputs(str, f_out);
+                fclose(f_out);
+
+
+                drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &jitCoordData);            
+                Float result = drjit_read_float(m_pnanoBuf, pnanoAddress);
+        }
     }
 
     UnpolarizedSpectrum eval(const Interaction3f &it,
                              Mask active) const override {
         MI_MASKED_FUNCTION(ProfilerPhase::TextureEvaluate, active);
-
-        Point3f p = m_to_local * it.p;
-        Float result;
-        
-        // float temp = float(asd1temp.data()[0]);
-
-        // TODO: stuck here currently, no idea how to convert and work with mitsuba DS, specifically Point3f to int32_t?
-        // pnanovdb_coord_t pnanoCoordinateTest;
-        // pnanoCoordinateTest.x = (p.x());
-        // pnanoCoordinateTest.y = (p.y());
-        // pnanoCoordinateTest.z = (p.z());
-
-        // This approach has to use GetAccessor for the ReadAccessor in NanoVDB
-        // float t =  ::GetValue(p.x(), p.y(), p.z());
-
-        // FloatJit y = drjit::gather<FloatJit>(jitDataCopy, index);
 
         return interpolate_1(it, active);
     }
@@ -207,7 +216,7 @@ public:
 
     MI_INLINE Float interpolate_1(const Interaction3f &it, Mask active) const {
         MI_MASK_ARGUMENT(active);
-        pnanovdb_coord_t pnanoCoordinateTest;
+        drjit_coord_t pnanoCoordinateTest;
         
         Point3f p = m_to_local * it.p;
         Float result;
@@ -238,58 +247,84 @@ public:
         // scalar_rgb - OK
         // p.data()[0] += 5;
         // auto data2 = p.data();
-    if constexpr (IsJIT){
-        // if(jit_has_backend(JitBackend::LLVM)){
-        //     FloatArrayL tempL = data[0];
-        //     // TODO: not sure why this is not working
-        //     // result = tempL;
-        //     result = data[0];
-        // }
-        // else if (jit_has_backend(JitBackend::CUDA))
-        // {
-        //     FloatArrayL tempL = data[0];
-        //     // TODO: not sure why this is not working
-        //     // result = tempL;
-        //     result = data[0];         
-        // }
-        // else
-        // {
-        //     auto dataTestForStaticArray = data[0];
-        //     // drjit::StaticArrayBase<float> tempL = data[0];
-        //     // result = tempL;
-        //     result = data[0];
-        // }
-    }else{
-        // Completely abandom llvm for a moment, to at least test data acquisition from the openvdb? 
 
+// #if defined(MI_ENABLE_LLVM) || defined(MI_ENABLE_CUDA)
+//         if(jit_has_backend(JitBackend::LLVM)){
+//             drjit_coord_t pnanoCoordinateTest;
+//             pnanoCoordinateTest.x = (p.x());
+//             pnanoCoordinateTest.y = (p.y());
+//             pnanoCoordinateTest.z = (p.z());
+            
+//             Float result;
+//             drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
+            
+//             result = drjit_read_float(m_pnanoBuf, pnanoAddress);
+
+//             return result;
+//         }
+//         else if (jit_has_backend(JitBackend::CUDA))
+//         {
+//             // TODO::
+//             auto i = 0;
+//         }
+//         else
+//         {
+//             float x = *pData;
+//             float y = *(pData+1);
+//             float z = pData[2];
+
+//             // Fix this by using the bbox values?
+//             pnanoCoordinateTest.x = int32_t(x * 100.f);
+//             pnanoCoordinateTest.y = int32_t(y * 100.f);
+//             pnanoCoordinateTest.z = int32_t(z * 100.f);
+
+//             drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
+
+//             Float tempL = drjit_read_float(m_pnanoBuf, pnanoAddress);
+
+//             result = tempL.data()[0];
+//         }
+// #else
         // ISSUE #1 - Cannot copy memory from the handle to drjit, since no backend is initialized. 
         // I could initialize it, but it really doesn't make sense to?
 
-        float x = *pData;
-        float y = *(pData+1);
-        float z = pData[2];
+        if constexpr (IsJIT){
+            Float x = p.x();
+            Float y = p.y();
+            Float z = p.z();
 
-        // TODO: Variant1 - no world->index
-        // Fix this by using the bbox values?
-        auto min = m_bboxVdb.min();
-        auto res = resolution(); // Order is 2-1-0 in resolution() -> need to swap x,z
-        pnanoCoordinateTest.x = int32_t(z * res[2] + (int)min[0]);
-        pnanoCoordinateTest.y = int32_t(y * res[1] + (int)min[1]);
-        pnanoCoordinateTest.z = int32_t(x * res[0] + (int)min[2]);
+            auto min = m_bboxVdb.min();
+            auto res = resolution(); // Order is 2-1-0 in resolution() -> need to swap x,z
+            // pnanoCoordinateTest.x = z;//(z * res[2] + (int)min[0]);
+            // pnanoCoordinateTest.y = y;//(y * res[1] + (int)min[1]);
+            // pnanoCoordinateTest.z = x;//(x * res[0] + (int)min[2]);
+            // drjit_coord_t jitCoordData = { 
+            //     drjit::full<Int32Jit>(1, 10), 
+            //     drjit::full<Int32Jit>(1, 10), 
+            //     drjit::full<Int32Jit>(1, 10) };
+            
+            // char *str = strdup(jit_var_graphviz());
+            // FILE *f_out = fopen("./graphviz.txt", "wb");
+            // fputs(str, f_out);
+            // fclose(f_out);
 
-        // // TODO: Variant2 - world_to_index from point3f->int. Possible loss of precision?
-        // pnanovdb_vec3_t inputCoord = {x, y, z}; //struct float3 x, y, z
-        // pnanovdb_vec3_t vecCoord = pnanovdb_grid_world_to_indexf(m_pnanoBuf, m_pnanoGridHandle, &inputCoord);
-        // pnanoCoordinateTest.x = int32_t(vecCoord.x);
-        // pnanoCoordinateTest.y = int32_t(vecCoord.y);
-        // pnanoCoordinateTest.z = int32_t(vecCoord.z);
+
+            // drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &jitCoordData);            
+            // result = drjit_read_float(m_pnanoBuf, pnanoAddress);
+            
+            // drjit_root_tile_handle_t tile = drjit_root_find_tile(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &jitCoordData);
+            // result = tile.address.byte_offset;
+            // drjit_upper_handle_t child = drjit_root_get_child(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, tile);
+            // result = child.address.byte_offset;
+            
+            // drjit_address_t testAddress = {drjit::full<UInt64Jit>(44531060)};
+            // result = drjit_read_uint64(m_pnanoBuf, testAddress);
+        } else {
+            result = 0;
+        }
         
-        pnanovdb_address_t pnanoAddress = pnanovdb_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
 
-        Float tempL = pnanovdb_read_float(m_pnanoBuf, pnanoAddress);
-
-        result = tempL;
-    }
+// #endif
         // drjit::LLVMArray<float> asd1temp = drjit::detach(p.x());
         // float temp = (drjit::slice(asd1temp, 0));
 
@@ -314,7 +349,7 @@ public:
         // FloatArrayL dataGather = drjit::gather<FloatJit>(m_dataCopy, jitOffsets);
 
         return result;
-    }
+}
 
     ScalarFloat max() const override { 
         return m_max;
@@ -378,11 +413,15 @@ protected:
     uint32_t m_byteSize;
     uint32_t m_floatSize;
 
-    pnanovdb_buf_t m_pnanoBuf;
-    pnanovdb_grid_type_t m_pnanoGridType;
-    pnanovdb_grid_handle_t m_pnanoGridHandle;
-    pnanovdb_tree_handle_t m_pnanoTreeHandle;
-    pnanovdb_root_handle_t m_pnanoRootHandle;
+// DrJit implementation -> LLVM, CUDA support
+    drjit_buf_t m_pnanoBuf;
+    drjit_grid_type_t m_pnanoGridType;
+    drjit_grid_handle_t m_pnanoGridHandle;
+    drjit_tree_handle_t m_pnanoTreeHandle;
+    drjit_root_handle_t m_pnanoRootHandle;
+
+// Scalar support
+    
     
     // DrJIT memcopy for the buffer size
     Float m_dataCopy;
@@ -398,10 +437,10 @@ protected:
     ScalarFloat m_min;
     ScalarFloat m_max;
 
-    // std::vector<ScalarFloat> m_max_per_channel;
+    std::vector<ScalarFloat> m_max_per_channel;
 };
 
-MI_IMPLEMENT_CLASS_VARIANT(GridTest, Volume)
-MI_EXPORT_PLUGIN(GridTest, "GridTest texture")
+MI_IMPLEMENT_CLASS_VARIANT(GridPnano, Volume)
+MI_EXPORT_PLUGIN(GridPnano, "GridTest texture")
 
 NAMESPACE_END(mitsuba)

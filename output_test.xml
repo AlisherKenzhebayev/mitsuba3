@@ -1,0 +1,68 @@
+<scene version="2.1.0">
+
+<!-- Defaults, these can be set via the command line: -Darg=value -->
+
+	<default name="resx" value="256"/>
+	<default name="resy" value="256"/>
+
+<!-- Camera and Rendering Parameters -->
+
+	<integrator type="volpath" id="integrator" name="integrator">
+		<integer name="max_depth" value="2"/>
+		<boolean name="hide_emitters" value="true"/>
+	</integrator>
+	<sensor type="perspective" id="sensor" name="sensor">
+		<integer name="fov" value="45"/>
+		<transform name="to_world">
+			<rotate x="1" angle="111.80140625964692"/>
+			<rotate z="1" angle="-90.00000250447816"/>
+			<translate value="5.000000 0.000000 2.000000"/>
+		</transform>
+		<film type="hdrfilm" name="film">
+			<integer name="width" value="$resx"/>
+			<integer name="height" value="$resy"/>
+			<rfilter type="tent" name="filter"/>
+		</film>
+		<float name="far_clip" value="100000.000000"/>
+	</sensor>
+
+<!-- Materials -->
+
+
+<!-- Emitters -->
+
+	<emitter type="constant" id="emitter" name="emitter">
+		<float name="radiance" value="1.000000"/>
+	</emitter>
+	<emitter type="directional" id="emitterdir" name="emitterdir">
+		<point name="direction" x="0.0" y="1.0" z="0.0"/>
+		<rgb value="1.000000" name="irradiance"/>
+	</emitter>
+	<emitter type="directional" id="emitterdir2" name="emitterdir2">
+		<point name="direction" x="0.0" y="-1.0" z="0.0"/>
+		<rgb value="1.000000" name="irradiance"/>
+	</emitter>
+
+<!-- Shapes -->
+
+	<shape type="cube" id="object" name="object">
+		<bsdf type="null" name="bsdf"/>
+		<medium type="heterogeneous" name="interior">
+			<volume type="gridtest" name="sigma_t">
+				<integer name="grid_n" value="0"/>
+				<string name="grid_type" value="float"/>
+				<string name="vdb_filename" value="./vdbfiles/converted.nvdb"/>
+				<transform name="to_world">
+					<matrix value="3.000000 0.000000 0.000000 -1.500000 0.000000 -0.000000 -3.000000 1.500000 0.000000 3.000000 -0.000000 -1.500000 0.000000 0.000000 0.000000 1.000000"/>
+				</transform>
+			</volume>
+			<float name="albedo" value="0.999000"/>
+		</medium>
+		<transform name="to_world">
+			<matrix value="2.000000 0.000000 0.000000 0.000000 0.000000 2.000000 0.000000 0.000000 0.000000 0.000000 2.000000 0.000000 0.000000 0.000000 0.000000 1.000000"/>
+		</transform>
+	</shape>
+
+<!-- Volumes -->
+
+</scene>
