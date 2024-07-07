@@ -147,22 +147,22 @@ public:
             }
         }
 
-        // Copy the data from the file to drJIT
-        m_byteSize = m_nanoHandle.size();
-        m_floatSize = m_byteSize / 4;
-        m_dataCopy = drjit::empty<Float>(m_floatSize);
-        if constexpr (!IsJIT){
-            // memcpy(m_dataCopy.data(), m_pGridData32, m_byteSize);
-        }else if constexpr (IsLLVM){
-            jit_memcpy(JitBackend::LLVM, m_dataCopy.data(), m_pGridData32, m_byteSize); 
-        }else{
-            jit_memcpy(JitBackend::CUDA, m_dataCopy.data(), m_pGridData32, m_byteSize); 
-        }
+        // // Copy the data from the file to drJIT
+        // m_byteSize = m_nanoHandle.size();
+        // m_floatSize = m_byteSize / 4;
+        // m_dataCopy = drjit::empty<Float>(m_floatSize);
+        // if constexpr (!IsJIT){
+        //     // memcpy(m_dataCopy.data(), m_pGridData32, m_byteSize);
+        // }else if constexpr (IsLLVM){
+        //     jit_memcpy(JitBackend::LLVM, m_dataCopy.data(), m_pGridData32, m_byteSize); 
+        // }else{
+        //     jit_memcpy(JitBackend::CUDA, m_dataCopy.data(), m_pGridData32, m_byteSize); 
+        // }
 
-        if (props.has_property("max_value")) {
-            m_fixed_max = true;
-            m_max = props.get<ScalarFloat>("max_value");
-        }
+        // if (props.has_property("max_value")) {
+        //     m_fixed_max = true;
+        //     m_max = props.get<ScalarFloat>("max_value");
+        // }
         
         // Create a PNanoVDB handle, since it is easier to get the offset this way for the coords.
         
@@ -411,8 +411,8 @@ protected:
 protected:
     nanovdb::GridHandle<nanovdb::HostBuffer> m_nanoHandle;
     uint32_t *m_pGridData32 = nullptr;
-    uint32_t m_byteSize;
-    uint32_t m_floatSize;
+    // uint32_t m_byteSize;
+    // uint32_t m_floatSize;
 
 // DrJit implementation -> LLVM, CUDA support
     drjit_buf_t m_pnanoBuf;
@@ -425,7 +425,7 @@ protected:
     
     
     // DrJIT memcopy for the buffer size
-    Float m_dataCopy;
+    // Float m_dataCopy;
     // Texture3f m_texture;
 
     nanovdb::BBoxR m_bboxVdb;

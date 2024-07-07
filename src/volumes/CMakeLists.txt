@@ -1,5 +1,7 @@
 set(MI_PLUGIN_PREFIX "volumes")
 
+include_directories(nanovdb)
+
 add_plugin(constvolume  const.cpp)
 add_plugin(gridvolume   grid.cpp)
 add_plugin(gridtest     gridtest.cpp)
