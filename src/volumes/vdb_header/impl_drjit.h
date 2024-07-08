@@ -14,6 +14,7 @@ typedef struct drjit_buf_t
 {
     UInt32Jit data;
     UInt64Jit data64;
+    UInt64Jit dataFloat;
 #ifdef PNANOVDB_BUF_BOUNDS_CHECK
     UInt64Jit size_in_words;
 #endif
@@ -24,17 +25,22 @@ PNANOVDB_BUF_FORCE_INLINE drjit_buf_t drjit_make_buf(uint32_t* data, uint64_t si
     uint32_t byteSize = size_in_words;
     uint32_t data32Size = byteSize / 4;
 
+    // printf("SIZEaSD %d, %d", byteSize, data32Size);
+
     drjit_buf_t ret;
     ret.data = drjit::empty<UInt32Jit>(data32Size);
     ret.data64 = drjit::empty<UInt64Jit>(data32Size >> 1u);
+    ret.dataFloat = drjit::empty<FloatJit>(data32Size);
     // ret.data = data;        // Creates a copy
 
 #if defined(DRJIT_USE_LLVM)
     jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
     jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
+    jit_memcpy(JitBackend::LLVM, ret.dataFloat.data(), data, byteSize); 
 #elif defined(DRJIT_USE_CUDA)
     jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
     jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
+    jit_memcpy(JitBackend::CUDA, ret.dataFloat.data(), data, byteSize); 
 #endif
 
 #ifdef PNANOVDB_BUF_BOUNDS_CHECK
@@ -81,6 +87,7 @@ PNANOVDB_BUF_FORCE_INLINE UInt64Jit drjit_buf_read_uint64(drjit_buf_t buf, UInt6
     
     // UInt32Jit scalarOffset = drjit::linspace<UInt64Jit>(0llu, 1llu, 2);
     // UInt32Jit addedOffset = drjit::tile(scalarOffset, byte_offset.size());
+    // printf("SIZES %lu %lu\n", wordAddress.size(), addedOffset.size());
     // wordAddress = wordAddress + addedOffset;
 
     UInt64Jit value = drjit::full<UInt64Jit>(uint64_t(0), byte_offset.size());
@@ -151,6 +158,8 @@ PNANOVDB_FORCE_INLINE drjit_uint32_t drjit_int32_as_uint32(drjit_int32_t v) { re
 PNANOVDB_FORCE_INLINE drjit_float_t drjit_uint32_as_float(drjit_uint32_t v) 
 { 
     drjit_float_t vf = drjit::reinterpret_array<drjit_float_t, drjit_uint32_t>(v);
+    // drjit_float_t vf = drjit::empty<drjit_float_t>(1); 
+    // vf = drjit::load<drjit_float_t>(v.data(), v.size());
     return vf;
 }
 PNANOVDB_FORCE_INLINE drjit_uint32_t drjit_uint64_low(drjit_uint64_t v) { return (drjit_uint32_t)v; }
@@ -373,13 +382,29 @@ PNANOVDB_FORCE_INLINE drjit_uint64_t drjit_coord_to_key(PNANOVDB_IN(drjit_coord_
 #pragma region Root Find Tile
 PNANOVDB_FORCE_INLINE drjit_root_tile_handle_t drjit_root_find_tile(drjit_grid_type_t grid_type, drjit_buf_t buf, drjit_root_handle_t root, PNANOVDB_IN(drjit_coord_t) ijk)
 {
+    // printf("\nJ root_find_tile tile_count\n");
     UInt32Jit tileCount = drjit_uint32_as_int32(drjit_root_get_tile_count(buf, root));
+    // for (size_t i = 0; i < tileCount.size(); i++)
+    // {
+    //     printf("%u ", tileCount.data()[i]);
+    // }
     
     drjit_root_tile_handle_t tile = drjit_root_get_tile_zero(grid_type, root);
-    
+    // printf("\nJ root_find_tile tile \n");
+    // for (size_t i = 0; i < tile.address.byte_offset.size(); i++)
+    // {
+    //     printf("%lu ", tile.address.byte_offset.data()[i]);
+    // }
+
     UInt32Jit tileFixed = drjit::full<UInt32Jit>(PNANOVDB_GRID_TYPE_GET(grid_type, root_tile_size));
 
+    // printf("\nJ root_find_tile key \n");
     UInt64Jit coordKey = drjit_coord_to_key(ijk);
+    // for (size_t i = 0; i < coordKey.size(); i++)
+    // {
+    //     printf("%lu ", coordKey.data()[i]);
+    // }
+    // printf("\n");
     uint32_t size = coordKey.size();
     UInt32Jit offset = drjit::zeros<UInt32Jit>(size);
 
@@ -444,7 +469,13 @@ PNANOVDB_FORCE_INLINE drjit_root_tile_handle_t drjit_root_find_tile(drjit_grid_t
                     drjit_root_tile_handle_t dummyTileHandleInLoop = 
                         {drjit_address_t{drjit::fmadd(i, tileFixedOffset, tileAddressOffset)}};
                     
+                    // printf("\nJ root_find_tile curkey %d \n", i.data()[0]);
                     UInt64Jit currentKey = drjit_root_tile_get_key(buffer, dummyTileHandleInLoop);
+                    // for (size_t j = 0; j < currentKey.size(); j++)
+                    // {
+                    //     printf("%lu ", currentKey.data()[j]);
+                    // }
+                    // printf("\n");
                     
                     curMask = drjit_uint64_is_equal(key, currentKey);
                     BoolJit pos = foundMask.and_(curMask);
