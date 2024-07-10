@@ -24,17 +24,6 @@
 
 using namespace drjit;
 
-using FloatArrayC  = dr::CUDAArray<float>;
-using Int32ArrayC  = dr::CUDAArray<int32_t>;
-using UInt32ArrayC = dr::CUDAArray<uint32_t>;
-using UInt64ArrayC = dr::CUDAArray<uint64_t>;
-using MaskArrayC   = dr::CUDAArray<bool>;
-using FloatArrayL  = dr::LLVMArray<float>;
-using Int32ArrayL  = dr::LLVMArray<int32_t>;
-using UInt32ArrayL = dr::LLVMArray<uint32_t>;
-using UInt64ArrayL = dr::LLVMArray<uint64_t>;
-using MaskArrayL   = dr::LLVMArray<bool>;
-
 // Include work from before on NanoVDB snippets, to at least enable reads from the file.
 
 NAMESPACE_BEGIN(mitsuba)
@@ -146,61 +135,14 @@ public:
                 m_max = 1.0f;
             }
         }
-
-        // // Copy the data from the file to drJIT
-        // m_byteSize = m_nanoHandle.size();
-        // m_floatSize = m_byteSize / 4;
-        // m_dataCopy = drjit::empty<Float>(m_floatSize);
-        // if constexpr (!IsJIT){
-        //     // memcpy(m_dataCopy.data(), m_pGridData32, m_byteSize);
-        // }else if constexpr (IsLLVM){
-        //     jit_memcpy(JitBackend::LLVM, m_dataCopy.data(), m_pGridData32, m_byteSize); 
-        // }else{
-        //     jit_memcpy(JitBackend::CUDA, m_dataCopy.data(), m_pGridData32, m_byteSize); 
-        // }
-
-        // if (props.has_property("max_value")) {
-        //     m_fixed_max = true;
-        //     m_max = props.get<ScalarFloat>("max_value");
-        // }
         
         // Create a PNanoVDB handle, since it is easier to get the offset this way for the coords.
         
         uint32_t byteSize = (uint64_t) m_nanoHandle.size();
         uint32_t data32Size = byteSize / 4;
 
-        // UInt32Jit jitDataCopy = drjit::empty<UInt32Jit>(data32Size);
-        // uint32_t* jitDataPointer = (uint32_t*) jitDataCopy.data();
-        // memcpy(jitDataCopy.data(), m_pGridData32, byteSize);
-        // UInt64Jit sizeInWords = drjit::full<UInt64Jit>(m_nanoHandle.size(), 1);
-        
-        // m_pnanoBuf = m_Implementation.drjit_make_buf(m_pGridData32, m_nanoHandle.size());
-        m_pnanoBuf = drjit_make_buf(m_pGridData32, m_nanoHandle.size());
-            
-        // m_pnanoGridHandle = typename DrJitImplementation<Float, Spectrum>::drjit_grid_handle_t();
-        m_pnanoGridHandle = drjit_grid_handle_t();
-
-        // m_pnanoTreeHandle = m_Implementation.drjit_grid_get_tree(m_pnanoBuf, m_pnanoGridHandle);
-        // m_pnanoRootHandle = m_Implementation.drjit_tree_get_root(m_pnanoBuf, m_pnanoTreeHandle);
-        m_pnanoTreeHandle = drjit_grid_get_tree(m_pnanoBuf, m_pnanoGridHandle);
-        m_pnanoRootHandle = drjit_tree_get_root(m_pnanoBuf, m_pnanoTreeHandle);
-
-        // nanovdb::DefaultReadAccessor <float> readAccessor = float_nanoGrid->getAccessor();
-        // if constexpr (IsJIT){
-        //         drjit_coord_t jitCoordData = { 
-        //             drjit::full<Int32Jit>(1, 10), 
-        //             drjit::full<Int32Jit>(1, 10), 
-        //             drjit::full<Int32Jit>(1, 10) };
-                
-        //         char *str = strdup(jit_var_graphviz());
-        //         FILE *f_out = fopen("./graphviz.txt", "wb");
-        //         fputs(str, f_out);
-        //         fclose(f_out);
-
-
-        //         drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &jitCoordData);            
-        //         Float result = drjit_read_float(m_pnanoBuf, pnanoAddress);
-        // }
+        m_pnanoBuf = m_Implementation.drjit_make_buf(m_pGridData32, m_nanoHandle.size());
+        // m_pnanoBuf = drjit_make_buf(m_pGridData32, m_nanoHandle.size());
     }
 
     UnpolarizedSpectrum eval(const Interaction3f &it,
@@ -217,26 +159,14 @@ public:
 
     MI_INLINE Float interpolate_1(const Interaction3f &it, Mask active) const {
         MI_MASK_ARGUMENT(active);
-        // typename DrJitImplementation<Float, Spectrum>::drjit_coord_t pnanoCoordinateTest;
-        drjit_coord_t pnanoCoordinateTest;
+        typename DrJitImplementation<Float, Spectrum>::drjit_coord_t pnanoCoordinateTest;
+        // drjit_coord_t pnanoCoordinateTest;
         
         Point3f p = m_to_local * it.p;
         Float result;
 
-        // dr::width(p);
-        
-            // TODO: attempt at extracting the data from Point3f p;
-        
-        // Point3f detachedPoint3f = drjit::detach(p);
-        // Float t_examine = detachedPoint3f.data()[0];
-        
-        // float t2 = drjit::slice(drjit::detach(t_examine), 0);
-        // Point t_data = drjit::slice(detached, 0);
-
-        // FloatArrayL xDiffData = drjit::detach(p.x());
-
         auto pointerWidth = dr::width(p);
-        auto itData = it.p.data(); //TODO: it.p seems to do something, but not sure what>?
+        auto itData = it.p.data(); 
         auto pData = p.data();
         auto dataWidth = dr::width(itData);
         auto testWidth = dr::width(itData[0]);
@@ -244,51 +174,6 @@ public:
         Float tempx = itData[0];
         Float tempy = itData[1];
         Float tempz = itData[2];
-        
-        // Test writing directly back, 
-        // scalar_rgb - OK
-        // p.data()[0] += 5;
-        // auto data2 = p.data();
-
-// #if defined(MI_ENABLE_LLVM) || defined(MI_ENABLE_CUDA)
-//         if(jit_has_backend(JitBackend::LLVM)){
-//             drjit_coord_t pnanoCoordinateTest;
-//             pnanoCoordinateTest.x = (p.x());
-//             pnanoCoordinateTest.y = (p.y());
-//             pnanoCoordinateTest.z = (p.z());
-            
-//             Float result;
-//             drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
-            
-//             result = drjit_read_float(m_pnanoBuf, pnanoAddress);
-
-//             return result;
-//         }
-//         else if (jit_has_backend(JitBackend::CUDA))
-//         {
-//             // TODO::
-//             auto i = 0;
-//         }
-//         else
-//         {
-//             float x = *pData;
-//             float y = *(pData+1);
-//             float z = pData[2];
-
-//             // Fix this by using the bbox values?
-//             pnanoCoordinateTest.x = int32_t(x * 100.f);
-//             pnanoCoordinateTest.y = int32_t(y * 100.f);
-//             pnanoCoordinateTest.z = int32_t(z * 100.f);
-
-//             drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
-
-//             Float tempL = drjit_read_float(m_pnanoBuf, pnanoAddress);
-
-//             result = tempL.data()[0];
-//         }
-// #else
-        // ISSUE #1 - Cannot copy memory from the handle to drjit, since no backend is initialized. 
-        // I could initialize it, but it really doesn't make sense to?
 
         if constexpr (IsJIT){
             Float x = p.x();
@@ -300,25 +185,21 @@ public:
             pnanoCoordinateTest.x = (z * res[2] + (int)min[0]);
             pnanoCoordinateTest.y = (y * res[1] + (int)min[1]);
             pnanoCoordinateTest.z = (x * res[0] + (int)min[2]);
-            // drjit_coord_t jitCoordData = { 
-            //     drjit::full<Int32Jit>(1, 10), 
-            //     drjit::full<Int32Jit>(1, 10), 
-            //     drjit::full<Int32Jit>(1, 10) };
-            
-            // char *str = strdup(jit_var_graphviz());
-            // FILE *f_out = fopen("./graphviz.txt", "wb");
-            // fputs(str, f_out);
-            // fclose(f_out);
-
 
             // jit_set_flag(JitFlag::Debug, true);
-            // typename DrJitImplementation<Float, Spectrum>::drjit_address_t pnanoAddress = m_Implementation.drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);            
-            // drjit_address_t pnanoAddress = m_Implementation.drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);            
-            drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);            
+
+            typename DrJitImplementation<Float, Spectrum>::drjit_grid_handle_t pnanoGridHandle = typename DrJitImplementation<Float, Spectrum>::drjit_grid_handle_t();
+            
+            typename DrJitImplementation<Float, Spectrum>::drjit_tree_handle_t pnanoTreeHandle = m_Implementation.drjit_grid_get_tree(m_pnanoBuf, pnanoGridHandle, active);
+            typename DrJitImplementation<Float, Spectrum>::drjit_root_handle_t pnanoRootHandle = m_Implementation.drjit_tree_get_root(m_pnanoBuf, pnanoTreeHandle, active);
+            
+            typename DrJitImplementation<Float, Spectrum>::drjit_address_t pnanoAddress = 
+                m_Implementation.drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, pnanoRootHandle, &pnanoCoordinateTest, active);
+            // drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);            
             // jit_set_flag(JitFlag::Debug, false);
             
-            // result = m_Implementation.drjit_read_float(m_pnanoBuf, pnanoAddress);
-            result = drjit_read_float(m_pnanoBuf, pnanoAddress);
+            result = m_Implementation.drjit_read_float(m_pnanoBuf, pnanoAddress, active);
+            // result = drjit_read_float(m_pnanoBuf, pnanoAddress);
             
             // drjit_root_tile_handle_t tile = drjit_root_find_tile(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &jitCoordData);
             // result = tile.address.byte_offset;
@@ -422,17 +303,14 @@ protected:
     // uint32_t m_floatSize;
 
 // DrJit implementation -> LLVM, CUDA support
-    // DrJitImplementation<Float, Spectrum> m_Implementation;
-    // typename DrJitImplementation<Float, Spectrum>::drjit_buf_t m_pnanoBuf;
-    // typename DrJitImplementation<Float, Spectrum>::drjit_grid_type_t m_pnanoGridType;
-    // typename DrJitImplementation<Float, Spectrum>::drjit_grid_handle_t m_pnanoGridHandle;
-    // typename DrJitImplementation<Float, Spectrum>::drjit_tree_handle_t m_pnanoTreeHandle;
-    // typename DrJitImplementation<Float, Spectrum>::drjit_root_handle_t m_pnanoRootHandle;
-    drjit_buf_t m_pnanoBuf;
-    drjit_grid_type_t m_pnanoGridType;
-    drjit_grid_handle_t m_pnanoGridHandle;
-    drjit_tree_handle_t m_pnanoTreeHandle;
-    drjit_root_handle_t m_pnanoRootHandle;
+    DrJitImplementation<Float, Spectrum> m_Implementation;
+    typename DrJitImplementation<Float, Spectrum>::drjit_buf_t m_pnanoBuf;
+    typename DrJitImplementation<Float, Spectrum>::drjit_grid_type_t m_pnanoGridType;
+    // drjit_buf_t m_pnanoBuf;
+    // drjit_grid_type_t m_pnanoGridType;
+    // drjit_grid_handle_t m_pnanoGridHandle;
+    // drjit_tree_handle_t m_pnanoTreeHandle;
+    // drjit_root_handle_t m_pnanoRootHandle;
 
 // Scalar support
     
