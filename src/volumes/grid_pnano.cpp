@@ -65,7 +65,7 @@ public:
             Throw("No filename under \"vdb_filename\" key is provided!");
         }
 
-        if(!std::filesystem::exists(file_path))
+        if(!mitsuba::filesystem::exists(file_path))
             Log(Error, "\"%s\": file does not exist!", file_path);
         
         auto _gridCountHandle = nanovdb::io::readGrid(file_path, -1, true);
