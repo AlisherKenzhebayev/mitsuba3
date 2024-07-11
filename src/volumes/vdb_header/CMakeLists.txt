@@ -5,7 +5,6 @@ project(vdb_header LANGUAGES C CXX)
 set(VDB_INCLUDE_FILES
   defines.h
   impl_drjit.h
-#   monolith_pnano.h
 )
 
 add_library(vdb_header INTERFACE)

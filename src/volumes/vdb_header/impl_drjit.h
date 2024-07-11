@@ -76,6 +76,7 @@ public:
         //     return value;
         // }
         Bool mask = wordAddress.lt_(buf.size_in_words);
+        wordAddress = drjit::select(mask, wordAddress, value); // Jit side optimization to avoid out-of-bounds reads
         UInt32 data = drjit::gather<UInt32>(buf.data, wordAddress);
         UInt32 out = drjit::select(mask, data, value);
         return out;
@@ -112,10 +113,7 @@ public:
         UInt64 sizeInWord64 = buf.size_in_words >> 1u;
         
         Bool mask = wordAddress64 < sizeInWord64;;
-        
-        // Alternative approach
-        // UInt32 gather32 = drjit::gather<UInt32>(buf.data, wordAddress);
-        // UInt64 gather64 = drjit::load<UInt64>(gather32.data(), byte_offset.size());
+        wordAddress64 = drjit::select(mask, wordAddress64, value); // Jit side optimization to avoid out-of-bounds reads
         UInt64 gather64 = drjit::gather<UInt64>(buf.data64, wordAddress64);
         UInt64 out = drjit::select(mask, gather64, value);
         return out;
