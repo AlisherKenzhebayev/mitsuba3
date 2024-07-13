@@ -81,12 +81,14 @@ public:
             Log(Error, "\"%d\": is not within the total #grids %d! \nCurrent data: \n%s", 
             grid_n, _totalGrids, out_meta_string);
 
-        m_nanoHandle = nanovdb::io::readGrid(file_path, grid_n, true);
-        if(m_nanoHandle){
-            m_bboxVdb = m_nanoHandle.gridMetaData()->indexBBox();
-            uint8_t *pGridData = m_nanoHandle.data();
+        nanovdb::GridHandle<nanovdb::HostBuffer> nanoHandle;
+        void *pGridData32;
+        nanoHandle = nanovdb::io::readGrid(file_path, grid_n, true);
+        if(nanoHandle){
+            m_bboxVdb = nanoHandle.gridMetaData()->indexBBox();
+            uint8_t *pGridData = nanoHandle.data();
             assert (pGridData != 0); 
-            m_pGridData32 = (uint32_t*) pGridData;
+            pGridData32 = (uint32_t*) pGridData;
         } else {
             Throw("GridHandle issues opening grid# %d", grid_n);
         }
@@ -103,17 +105,17 @@ public:
                 break;
 
             case 1:  // "float"
-                float_nanoGrid = m_nanoHandle.grid<float>();
+                float_nanoGrid = nanoHandle.grid<float>();
                 m_pnanoGridType = PNANOVDB_GRID_TYPE_FLOAT;
                 break;
 
             case 2:
-                double_nanoGrid = m_nanoHandle.grid<double>();
+                double_nanoGrid = nanoHandle.grid<double>();
                 m_pnanoGridType = PNANOVDB_GRID_TYPE_DOUBLE;
                 break;
 
             case 3:
-                int32_nanoGrid = m_nanoHandle.grid<int32_t>();
+                int32_nanoGrid = nanoHandle.grid<int32_t>();
                 m_pnanoGridType = PNANOVDB_GRID_TYPE_INT32;
                 break;
             // ... Expand past 
@@ -127,7 +129,7 @@ public:
                 && !int32_nanoGrid)
                 Throw("GridHandle does not contain a grid with \"%s\" value type", grid_type_str);
         
-            if(m_nanoHandle.gridMetaData()->hasMinMax()){
+            if(nanoHandle.gridMetaData()->hasMinMax()){
                 float_nanoGrid->tree().extrema(m_min, m_max);
                 // Throw("MIN MAX %f %f\" values", m_min, m_max);
             } else {
@@ -138,11 +140,13 @@ public:
         
         // Create a PNanoVDB handle, since it is easier to get the offset this way for the coords.
         
-        uint32_t byteSize = (uint64_t) m_nanoHandle.size();
+        uint32_t byteSize = nanoHandle.size();
         uint32_t data32Size = byteSize / 4;
 
-        m_pnanoBuf = m_Implementation.drjit_make_buf(m_pGridData32, m_nanoHandle.size());
-        // m_pnanoBuf = drjit_make_buf(m_pGridData32, m_nanoHandle.size());
+        // Log(Error, "NANOVDB-bytes | %d", byteSize);
+
+        m_pnanoBuf = m_Implementation.drjit_make_buf(pGridData32, nanoHandle.size());
+        // m_pnanoBuf = drjit_make_buf(pGridData32, nanoHandle.size());
     }
 
     UnpolarizedSpectrum eval(const Interaction3f &it,
@@ -155,7 +159,6 @@ public:
         MI_MASKED_FUNCTION(ProfilerPhase::TextureEvaluate, active);
         return interpolate_1(it, active);
     }
-
 
     MI_INLINE Float interpolate_1(const Interaction3f &it, Mask active) const {
         MI_MASK_ARGUMENT(active);
@@ -280,6 +283,8 @@ public:
     MI_DECLARE_CLASS()
 
 protected:
+    virtual ~GridPnano() = default;
+
     // /**
     //  * \brief Returns the number of channels in the grid
     //  *
@@ -296,9 +301,6 @@ protected:
     //     return channels;
     // }
 
-protected:
-    nanovdb::GridHandle<nanovdb::HostBuffer> m_nanoHandle;
-    uint32_t *m_pGridData32 = nullptr;
     // uint32_t m_byteSize;
     // uint32_t m_floatSize;
 

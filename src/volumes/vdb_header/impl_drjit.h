@@ -20,40 +20,44 @@ public:
 
     struct drjit_buf_t
     {
-        Int32 data;
+        UInt32 data;
         UInt64 data64;
-        UInt64 dataFloat;
     #ifdef PNANOVDB_BUF_BOUNDS_CHECK
         UInt64 size_in_words;
     #endif
     };
 
-    PNANOVDB_BUF_FORCE_INLINE drjit_buf_t drjit_make_buf(uint32_t* data, uint64_t size_in_words)
+    PNANOVDB_BUF_FORCE_INLINE drjit_buf_t drjit_make_buf(const void* data, uint64_t size_in_words)
     {
+        // static_assert(!IsJIT);
+
         uint32_t byteSize = size_in_words;
         uint32_t data32Size = byteSize / 4;
 
         // printf("SIZEaSD %d, %d", byteSize, data32Size);
 
         drjit_buf_t ret;
-        ret.data = drjit::empty<UInt32>(data32Size);
-        ret.data64 = drjit::empty<UInt64>(data32Size >> 1u);
-        ret.dataFloat = drjit::empty<Float>(data32Size);
+        ret.data = drjit::load<UInt32>(data, data32Size);
+        if constexpr(IsJIT) 
+            ret.data64 = drjit::map<UInt64>(ret.data.data(), data32Size / 2);
+        // if constexpr(IsJIT) {
+        //     ret.data64 = UInt64::borrow(ret.data.index());
+        //     // ret.data64 = UInt64::borrow(ret.data.index());
+        // }
+        // ret.data64 = drjit::empty<UInt64>(data32Size << 1u);
         // ret.data = data;        // Creates a copy
 
-        if constexpr(IsJIT) {
-            if constexpr(IsLLVM) {
-// #if defined(DRJIT_USE_LLVM)
-                jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
-                jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
-                jit_memcpy(JitBackend::LLVM, ret.dataFloat.data(), data, byteSize); 
-            } else {
-// #elif defined(DRJIT_USE_CUDA)
-                jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
-                jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
-                jit_memcpy(JitBackend::CUDA, ret.dataFloat.data(), data, byteSize); 
-            }
-        }
+//         if constexpr(IsJIT) {
+//             if constexpr(IsLLVM) {
+// // #if defined(DRJIT_USE_LLVM)
+//                 jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
+//                 // jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
+//             } else {
+// // #elif defined(DRJIT_USE_CUDA)
+//                 jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
+//                 // jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
+//             }
+//         }
 // #endif
 
     #ifdef PNANOVDB_BUF_BOUNDS_CHECK
