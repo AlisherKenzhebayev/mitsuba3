@@ -27,7 +27,7 @@ public:
     #endif
     };
 
-    PNANOVDB_BUF_FORCE_INLINE drjit_buf_t drjit_make_buf(const void* data, uint64_t size_in_words)
+    PNANOVDB_BUF_FORCE_INLINE drjit_buf_t drjit_make_buf(const uint32_t* data, uint64_t size_in_words)
     {
         // static_assert(!IsJIT);
 
@@ -37,28 +37,20 @@ public:
         // printf("SIZEaSD %d, %d", byteSize, data32Size);
 
         drjit_buf_t ret;
-        ret.data = drjit::load<UInt32>(data, data32Size);
-        if constexpr(IsJIT) 
+        // ret.data = drjit::empty<UInt32>(data32Size);
+        ret.data = drjit::load_aligned<UInt32>(data, data32Size);
+        // ret.data64 = drjit::empty<UInt64>(data32Size << 1);
+        
+        if constexpr(IsJIT) {
+            if constexpr(IsLLVM) {
+                // jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
+                // jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
+            } else {
+                // jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
+                // jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
+            }
             ret.data64 = drjit::map<UInt64>(ret.data.data(), data32Size / 2);
-        // if constexpr(IsJIT) {
-        //     ret.data64 = UInt64::borrow(ret.data.index());
-        //     // ret.data64 = UInt64::borrow(ret.data.index());
-        // }
-        // ret.data64 = drjit::empty<UInt64>(data32Size << 1u);
-        // ret.data = data;        // Creates a copy
-
-//         if constexpr(IsJIT) {
-//             if constexpr(IsLLVM) {
-// // #if defined(DRJIT_USE_LLVM)
-//                 jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
-//                 // jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
-//             } else {
-// // #elif defined(DRJIT_USE_CUDA)
-//                 jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
-//                 // jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
-//             }
-//         }
-// #endif
+        }
 
     #ifdef PNANOVDB_BUF_BOUNDS_CHECK
         // ret.size_in_words = size_in_words;

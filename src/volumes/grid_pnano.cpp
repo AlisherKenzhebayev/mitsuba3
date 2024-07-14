@@ -82,7 +82,7 @@ public:
             grid_n, _totalGrids, out_meta_string);
 
         nanovdb::GridHandle<nanovdb::HostBuffer> nanoHandle;
-        void *pGridData32;
+        uint32_t *pGridData32;
         nanoHandle = nanovdb::io::readGrid(file_path, grid_n, true);
         if(nanoHandle){
             m_bboxVdb = nanoHandle.gridMetaData()->indexBBox();
@@ -141,11 +141,10 @@ public:
         // Create a PNanoVDB handle, since it is easier to get the offset this way for the coords.
         
         uint32_t byteSize = nanoHandle.size();
-        uint32_t data32Size = byteSize / 4;
 
         // Log(Error, "NANOVDB-bytes | %d", byteSize);
 
-        m_pnanoBuf = m_Implementation.drjit_make_buf(pGridData32, nanoHandle.size());
+        m_pnanoBuf = m_Implementation.drjit_make_buf(pGridData32, byteSize);
         // m_pnanoBuf = drjit_make_buf(pGridData32, nanoHandle.size());
     }
 
@@ -168,15 +167,15 @@ public:
         Point3f p = m_to_local * it.p;
         Float result;
 
-        auto pointerWidth = dr::width(p);
-        auto itData = it.p.data(); 
-        auto pData = p.data();
-        auto dataWidth = dr::width(itData);
-        auto testWidth = dr::width(itData[0]);
+        // auto pointerWidth = dr::width(p);
+        // auto itData = it.p.data(); 
+        // auto pData = p.data();
+        // auto dataWidth = dr::width(itData);
+        // auto testWidth = dr::width(itData[0]);
         
-        Float tempx = itData[0];
-        Float tempy = itData[1];
-        Float tempz = itData[2];
+        // Float tempx = itData[0];
+        // Float tempy = itData[1];
+        // Float tempz = itData[2];
 
         if constexpr (IsJIT){
             Float x = p.x();
