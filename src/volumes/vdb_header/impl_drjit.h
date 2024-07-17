@@ -7,8 +7,6 @@
 
 #define PNANOVDB_BUF_FORCE_INLINE static inline __attribute__((always_inline))
 
-#pragma region Buffer + Reads
-
 template <typename Float, typename Spectrum>
 class DrJitImplementation{
 public: 
@@ -29,12 +27,8 @@ public:
 
     PNANOVDB_BUF_FORCE_INLINE drjit_buf_t drjit_make_buf(const uint32_t* data, uint64_t size_in_words)
     {
-        // static_assert(!IsJIT);
-
         uint32_t byteSize = size_in_words;
         uint32_t data32Size = byteSize / 4;
-
-        // printf("SIZEaSD %d, %d", byteSize, data32Size);
 
         drjit_buf_t ret;
         // ret.data = drjit::empty<UInt32>(data32Size);
@@ -42,18 +36,17 @@ public:
         // ret.data64 = drjit::empty<UInt64>(data32Size << 1);
         
         if constexpr(IsJIT) {
-            if constexpr(IsLLVM) {
-                // jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
-                // jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
-            } else {
-                // jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
-                // jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
-            }
+            // if constexpr(IsLLVM) {
+            //     jit_memcpy(JitBackend::LLVM, ret.data.data(), data, byteSize); 
+            //     jit_memcpy(JitBackend::LLVM, ret.data64.data(), data, byteSize); 
+            // } else {
+            //     jit_memcpy(JitBackend::CUDA, ret.data.data(), data, byteSize); 
+            //     jit_memcpy(JitBackend::CUDA, ret.data64.data(), data, byteSize); 
+            // }
             ret.data64 = drjit::map<UInt64>(ret.data.data(), data32Size / 2);
         }
 
     #ifdef PNANOVDB_BUF_BOUNDS_CHECK
-        // ret.size_in_words = size_in_words;
         ret.size_in_words = drjit::full<UInt64>(size_in_words, 1);
     #endif
         return ret;
@@ -62,15 +55,9 @@ public:
     PNANOVDB_BUF_FORCE_INLINE UInt32 drjit_buf_read_uint32(drjit_buf_t buf, UInt64 byte_offset, Mask active)
     {
         MI_MASK_ARGUMENT(active);
-        //UInt64 wordAddress = (byte_offset >> 2u);
-        UInt32 wordAddress = byte_offset >> 2u;// drjit::sr<2u>(byte_offset);
+        UInt32 wordAddress = byte_offset >> 2u;
         UInt32 value = drjit::full<UInt32>(0u);
     #ifdef PNANOVDB_BUF_BOUNDS_CHECK
-        // if((wordAddress < buf.size_in_words).data()[0]){
-        //     return drjit::gather<UInt32>(buf.data, wordAddress);
-        // }else{
-        //     return value;
-        // }
         Bool mask = wordAddress.lt_(buf.size_in_words);
         wordAddress = drjit::select(mask, wordAddress, value); // Jit side optimization to avoid out-of-bounds reads
         UInt32 data = drjit::gather<UInt32>(buf.data, wordAddress);
@@ -84,28 +71,11 @@ public:
     PNANOVDB_BUF_FORCE_INLINE UInt64 drjit_buf_read_uint64(drjit_buf_t buf, UInt64 byte_offset, Mask active)
     {
         MI_MASK_ARGUMENT(active);
-        // uint64_t offset64 = byte_offset.data()[0] >> 3u;
-        // UInt64 wordAddress64 = drjit::full<UInt64>(offset64, 1);
-        UInt64 wordAddress64 = byte_offset >> 3u;// drjit::sr<3u>(byte_offset);
-        
-        // UInt64 wordAddress = (wordAddress64 << 1u);
-        // UInt32 wordAddress32 = wordAddress64 << 1u;// drjit::sl<1u>(wordAddress64);
-        // drjit::resize(wordAddress32, 2);
-        // UInt32 wordAddress = drjit::repeat(wordAddress32, 2);
-        // TODO: confused about the size? 
-        // Is it array or matrix?
-        // Also the approach I use is to load the gathered data by size
-        // Will it still work with the UInt64?
-        
-        // UInt32 scalarOffset = drjit::linspace<UInt64>(0llu, 1llu, 2);
-        // UInt32 addedOffset = drjit::tile(scalarOffset, byte_offset.size());
-        // printf("SIZES %lu %lu\n", wordAddress.size(), addedOffset.size());
-        // wordAddress = wordAddress + addedOffset;
+        UInt64 wordAddress64 = byte_offset >> 3u;
         
         UInt64 value = drjit::full<UInt64>(uint64_t(0));
     
     #ifdef PNANOVDB_BUF_BOUNDS_CHECK
-        // UInt64 sizeInWord64 = buf.size_in_words >> 1u;
         UInt64 sizeInWord64 = buf.size_in_words >> 1u;
         
         Bool mask = wordAddress64 < sizeInWord64;;
@@ -119,14 +89,8 @@ public:
         return gather64;
     #endif
     }
-    #pragma endregion Buffer + Reads
 
-    // [TODO] LATER: Line 198 -> Line 1602 For now left as is
     typedef uint32_t drjit_grid_type_t;
-    // #define PNANOVDB_GRID_TYPE_GET(grid_typeIn, nameIn) drjit_grid_type_constants[grid_typeIn].nameIn
-
-    // [TODO] LATER: Recheck, hereon coding out of PNANOVDB_C assumption 
-    #pragma region Basic Types
     #if defined(__CUDACC__)
     #define PNANOVDB_FORCE_INLINE static __host__ __device__ __forceinline__
     #elif defined(_WIN32)
@@ -179,8 +143,6 @@ public:
     { 
         MI_MASK_ARGUMENT(active);
         Float vf = drjit::reinterpret_array<Float, UInt32>(v);
-        // Float vf = drjit::empty<Float>(1); 
-        // vf = drjit::load<Float>(v.data(), v.size());
         return vf;
     }
     PNANOVDB_FORCE_INLINE UInt32 drjit_uint64_low(UInt64 v, Mask active) 
@@ -193,9 +155,6 @@ public:
         MI_MASK_ARGUMENT(active);
         return ((UInt64)x); 
     }
-
-    // Mainly used as if case, so Bool should work well
-    // [MODIFIED]
     PNANOVDB_FORCE_INLINE Bool drjit_uint64_is_equal(UInt64 a, UInt64 b, Mask active) 
     { 
         MI_MASK_ARGUMENT(active);
@@ -206,13 +165,6 @@ public:
         MI_MASK_ARGUMENT(active);
         return drjit::eq(a, 0l); 
     }
-    #pragma endregion Basic Types
-
-    #pragma region Address Type
-    #pragma region x32
-        // [TODO] x32 code
-    #pragma endregion x32
-    #pragma region x64
     struct drjit_address_t
     {
         UInt64 byte_offset;
@@ -249,14 +201,8 @@ public:
     PNANOVDB_FORCE_INLINE Bool drjit_address_is_null(drjit_address_t address, Mask active)
     {
         MI_MASK_ARGUMENT(active);
-        // Gets broadcasted
         return drjit::eq(address.byte_offset, 0);
     }
-    #pragma endregion x64
-    #pragma endregion Address Type
-
-
-    #pragma region HL Buffer Read
     PNANOVDB_FORCE_INLINE UInt32 drjit_read_uint32(drjit_buf_t buf, drjit_address_t address, Mask active)
     {
         MI_MASK_ARGUMENT(active);
@@ -277,15 +223,7 @@ public:
         MI_MASK_ARGUMENT(active);
         return drjit_uint32_as_float(drjit_read_uint32(buf, address, active), active);
     }
-    #pragma endregion HL Buffer Read
-
-
-    #pragma region Core structures
-    // [TODO] Skipped, later included with header from pnano 
-    #pragma endregion Core structures
-
-
-    #pragma region Grid + Tree Handle
+    
     struct drjit_grid_handle_t { drjit_address_t address = {drjit::full<UInt64>(uint64_t(0))}; };
     PNANOVDB_STRUCT_TYPEDEF(drjit_grid_handle_t)
 
@@ -297,10 +235,6 @@ public:
         MI_MASK_ARGUMENT(active);
         return drjit_read_uint64(buf, drjit_address_offset(p.address, PNANOVDB_TREE_OFF_NODE_OFFSET_ROOT, active), active);
     }
-    #pragma endregion Grid + Tree Handle
-
-
-    #pragma region Root Handle
     struct drjit_root_handle_t { drjit_address_t address = {drjit::full<UInt64>(0ul)}; };
     PNANOVDB_STRUCT_TYPEDEF(drjit_root_handle_t)
 
@@ -309,10 +243,6 @@ public:
         MI_MASK_ARGUMENT(active);
         return drjit_read_uint32(buf, drjit_address_offset(p.address, PNANOVDB_ROOT_OFF_TABLE_SIZE, active), active);
     }
-    #pragma endregion Root Handle
-
-
-    #pragma region Root Tile
     struct drjit_root_tile_handle_t { drjit_address_t address = {drjit::full<UInt64>(0)}; };
     PNANOVDB_STRUCT_TYPEDEF(drjit_root_tile_handle_t)
 
@@ -328,36 +258,27 @@ public:
         UInt32 byte_offset = drjit::full<UInt32>(uint32_t(PNANOVDB_ROOT_TILE_OFF_CHILD));
         return drjit_read_int64(buf, drjit_address_offset(p.address, byte_offset, active), active);
     }
-    #pragma endregion Root Tile
-
-    #pragma region Upper Handle
     struct drjit_upper_handle_t { drjit_address_t address = {drjit::full<UInt64>(0)}; };
     PNANOVDB_STRUCT_TYPEDEF(drjit_upper_handle_t)
 
     PNANOVDB_FORCE_INLINE Bool drjit_upper_get_child_mask(drjit_buf_t buf, drjit_upper_handle_t p, UInt32 bit_index, Mask active) 
     {
         MI_MASK_ARGUMENT(active);
-        UInt32 bit_index_shift = bit_index >> 5u;// drjit::sr<5u>(bit_index);
+        UInt32 bit_index_shift = bit_index >> 5u;
         UInt32 upper_off_child = drjit::full<UInt32>(uint32_t(PNANOVDB_UPPER_OFF_CHILD_MASK));
         UInt32 byte_offset = drjit::fmadd(4u, bit_index_shift, upper_off_child);
         
-        // byte_offset = PNANOVDB_UPPER_OFF_CHILD_MASK + 4u * (bit_index >> 5u);
         drjit_address_t tempAddr = drjit_address_offset(p.address, byte_offset, active);
         UInt32 value = drjit_read_uint32(buf, tempAddr, active);
         UInt32 and_bit_index = bit_index & drjit::full<UInt32>(31u);
-        UInt32 shifted_value = value >> and_bit_index; // Unable to call the drjit::sr<> for the and_bit_index
-        // return ((value >> (bit_index & 31u)) & 1) != 0u;
-        // return (shifted_value & drjit::full<UInt32>(1u)) != drjit::zeros<UInt32>();
+        UInt32 shifted_value = value >> and_bit_index;
+        
         return drjit::neq<UInt32, UInt32>
             (
                 (shifted_value & drjit::full<UInt32>(1)),
                 drjit::zeros<UInt32>()
             );
     }
-    #pragma endregion Upper Handle
-
-
-    #pragma region Lower Handle
     struct drjit_lower_handle_t { drjit_address_t address = {drjit::full<UInt64>(0)}; };
     PNANOVDB_STRUCT_TYPEDEF(drjit_lower_handle_t)
 
@@ -365,34 +286,21 @@ public:
     PNANOVDB_FORCE_INLINE Bool drjit_lower_get_child_mask(drjit_buf_t buf, drjit_lower_handle_t p, UInt32 bit_index, Mask active) 
     {
         MI_MASK_ARGUMENT(active);
-        UInt32 bit_index_shift = bit_index >> 5u;// drjit::sr<5u>(bit_index);
-        // UInt32 bit_index_shift = drjit::sr<5u>(bit_index);
+        UInt32 bit_index_shift = bit_index >> 5u;
         UInt32 lower_off_child = drjit::full<UInt32>(uint32_t(PNANOVDB_LOWER_OFF_CHILD_MASK));
         UInt32 byte_offset = drjit::fmadd(4u, bit_index_shift, lower_off_child);
-        
-        // byte_offset = PNANOVDB_UPPER_OFF_CHILD_MASK + 4u * (bit_index >> 5u);
 
         UInt32 value = drjit_read_uint32(buf, drjit_address_offset(p.address, byte_offset, active), active);
         UInt32 and_bit_index = bit_index & drjit::full<UInt32>(31u);
-        UInt32 shifted_value = value >> and_bit_index; // Unable to call the drjit::sr<> for the and_bit_index
-        // return ((value >> (bit_index & 31u)) & 1) != 0u;    
-        // return (shifted_value & drjit::full<UInt32>(uint32_t(1))) != drjit::zeros<UInt32>();
+        UInt32 shifted_value = value >> and_bit_index;
         return drjit::neq<UInt32, UInt32>
             (
                 (shifted_value & drjit::full<UInt32>(1)),
                 drjit::zeros<UInt32>()
             );
     }
-    #pragma endregion Lower Handle
-
-
-    #pragma region Leaf
     struct drjit_leaf_handle_t { drjit_address_t address = {drjit::full<UInt64>(0)}; };
     PNANOVDB_STRUCT_TYPEDEF(drjit_leaf_handle_t)
-    #pragma endregion Leaf
-
-
-    #pragma region Get Handle (Tree, Root)
     PNANOVDB_FORCE_INLINE drjit_tree_handle_t drjit_grid_get_tree(drjit_buf_t buf, drjit_grid_handle_t grid, Mask active)
     {
         MI_MASK_ARGUMENT(active);
@@ -425,10 +333,6 @@ public:
         upper.address = drjit_address_offset64(upper.address, drjit_int64_as_uint64(drjit_root_tile_get_child(buf, tile, active), active), active);
         return upper;
     }
-    #pragma endregion Get Handle (Tree, Root)
-
-
-    #pragma region Coord To Key
     PNANOVDB_FORCE_INLINE UInt64 drjit_coord_to_key(PNANOVDB_IN(drjit_coord_t) ijk, Mask active)
     {
         MI_MASK_ARGUMENT(active);
@@ -447,29 +351,15 @@ public:
         // return pnanovdb_uint32_as_uint64(key_x, key_y);
     #endif
     }
-    #pragma endregion Coord To Key
-
-
-    #pragma region Root Find Tile
+    
     PNANOVDB_FORCE_INLINE drjit_root_tile_handle_t drjit_root_find_tile(drjit_grid_type_t grid_type, drjit_buf_t buf, drjit_root_handle_t root, PNANOVDB_IN(drjit_coord_t) ijk, Mask active)
     {
         MI_MASK_ARGUMENT(active);
-        drjit_buf_t buffer = buf;
-
-        UInt32 tileCount = drjit_uint32_as_int32(drjit_root_get_tile_count(buf, root, active), active);    
-        UInt32 tile_count = tileCount;
-
+        UInt32 tile_count = drjit_uint32_as_int32(drjit_root_get_tile_count(buf, root, active), active);
         drjit_root_tile_handle_t tile = drjit_root_get_tile_zero(grid_type, root, active);
-        
-        UInt32 tileFixed = drjit::full<UInt32>(PNANOVDB_GRID_TYPE_GET(grid_type, root_tile_size));
-        UInt32 tileFixedOffset = tileFixed;
-        
+        UInt32 tileFixedOffset = drjit::full<UInt32>(PNANOVDB_GRID_TYPE_GET(grid_type, root_tile_size));
         UInt64 coordKey = drjit_coord_to_key(ijk, active);
-        UInt64 key = coordKey;
-        
-        uint32_t size = coordKey.size();
         UInt64 tileAddressOffset = tile.address.byte_offset;
-
         UInt32 byte_offset = drjit::full<UInt32>(uint32_t(PNANOVDB_ROOT_TILE_OFF_KEY));
         
         UInt32 i = drjit::full<UInt32>(0);
@@ -477,36 +367,31 @@ public:
         Bool curMask = drjit::full<Bool>(false);
         Bool modifyMask  = drjit::full<Bool>(false);
         drjit::Loop<Bool> 
-            loop("Root Find Tile", i, key, tile_count, curMask, foundMask, modifyMask, tileFixedOffset, tileAddressOffset, byte_offset, buffer);
+            loop("Root Find Tile", i, 
+                coordKey, tile_count, curMask, foundMask, modifyMask, 
+                tileFixedOffset, tileAddressOffset, byte_offset, buf);
 
         while(loop(i < tile_count)){
             drjit_root_tile_handle_t dummyTileHandleInLoop = 
-                {drjit_address_t{drjit::fmadd(i, tileFixedOffset, tileAddressOffset)}};
-            
-            UInt64 currentKey = drjit_root_tile_get_key(buffer, dummyTileHandleInLoop, active);
-            
-            curMask = drjit_uint64_is_equal(key, currentKey, active);
+                { drjit_address_t { drjit::fmadd(i, tileFixedOffset, tileAddressOffset) } };
+            UInt64 currentKey = drjit_root_tile_get_key(buf, dummyTileHandleInLoop, active);
+            curMask = drjit_uint64_is_equal(coordKey, currentKey, active);
             Bool pos = foundMask.and_(curMask);
             Bool neg = foundMask.not_().and_(curMask);
             modifyMask = pos.or_(neg);
             foundMask = foundMask.or_(curMask);
-            
             tileAddressOffset = drjit::select(
                 modifyMask, 
                 drjit::fmadd(i, tileFixedOffset, tileAddressOffset), 
                 tileAddressOffset);
-
             i += 1;
         }
-        
+
         drjit_root_tile_handle_t null_handle = { drjit_address_null(active) };
         tile.address.byte_offset = drjit::select(foundMask, tileAddressOffset, null_handle.address.byte_offset);
         return tile;
     }
-    #pragma endregion Root Find Tile
 
-
-    #pragma region Leaf Node
     PNANOVDB_FORCE_INLINE UInt32 drjit_leaf_coord_to_offset(PNANOVDB_IN(drjit_coord_t) ijk, Mask active)
     {
         MI_MASK_ARGUMENT(active);
@@ -536,10 +421,6 @@ public:
         UInt32 n = drjit_leaf_coord_to_offset(ijk, active);
         return drjit_leaf_get_table_address(grid_type, buf, leaf, n, active);
     }
-    #pragma endregion Leaf Node
-
-
-    #pragma region Lower Node
     PNANOVDB_FORCE_INLINE UInt32 drjit_lower_coord_to_offset(PNANOVDB_IN(drjit_coord_t) ijk, Mask active)
     {
         MI_MASK_ARGUMENT(active);
@@ -576,9 +457,6 @@ public:
         leaf.address = drjit_address_offset64(leaf.address, drjit_int64_as_uint64(drjit_lower_get_table_child(grid_type, buf, lower, n, active), active), active);
         return leaf;
     }
-    #pragma endregion Lower Node
-
-    #pragma region Last8
     PNANOVDB_FORCE_INLINE drjit_address_t drjit_lower_get_value_address_and_level(drjit_grid_type_t grid_type, drjit_buf_t buf, drjit_lower_handle_t lower, PNANOVDB_IN(drjit_coord_t) ijk, PNANOVDB_INOUT(UInt32) level, Mask active)
     {
         MI_MASK_ARGUMENT(active);
@@ -686,7 +564,6 @@ public:
         UInt32 level;
         return drjit_root_get_value_address_and_level(grid_type, buf, root, ijk, PNANOVDB_REF(level), active);
     }
-    #pragma endregion Last8
 
     // jit_var_lt
     // uint32_t v0 = jit_var_literal(/* backend  = */ JitBackendCUDA,
