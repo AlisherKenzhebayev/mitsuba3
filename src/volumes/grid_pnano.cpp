@@ -24,8 +24,6 @@
 
 using namespace drjit;
 
-// Include work from before on NanoVDB snippets, to at least enable reads from the file.
-
 NAMESPACE_BEGIN(mitsuba)
 
 template <typename Float, typename Spectrum>
@@ -138,14 +136,9 @@ public:
             }
         }
         
-        // Create a PNanoVDB handle, since it is easier to get the offset this way for the coords.
-        
         uint32_t byteSize = nanoHandle.size();
 
-        // Log(Error, "NANOVDB-bytes | %d", byteSize);
-
         m_pnanoBuf = m_Implementation.drjit_make_buf(pGridData32, byteSize);
-        // m_pnanoBuf = drjit_make_buf(pGridData32, nanoHandle.size());
     }
 
     UnpolarizedSpectrum eval(const Interaction3f &it,
@@ -162,20 +155,9 @@ public:
     MI_INLINE Float interpolate_1(const Interaction3f &it, Mask active) const {
         MI_MASK_ARGUMENT(active);
         typename DrJitImplementation<Float, Spectrum>::drjit_coord_t pnanoCoordinateTest;
-        // drjit_coord_t pnanoCoordinateTest;
         
         Point3f p = m_to_local * it.p;
         Float result;
-
-        // auto pointerWidth = dr::width(p);
-        // auto itData = it.p.data(); 
-        // auto pData = p.data();
-        // auto dataWidth = dr::width(itData);
-        // auto testWidth = dr::width(itData[0]);
-        
-        // Float tempx = itData[0];
-        // Float tempy = itData[1];
-        // Float tempz = itData[2];
 
         if constexpr (IsJIT){
             Float x = p.x();
@@ -197,47 +179,12 @@ public:
             
             typename DrJitImplementation<Float, Spectrum>::drjit_address_t pnanoAddress = 
                 m_Implementation.drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, pnanoRootHandle, &pnanoCoordinateTest, active);
-            // drjit_address_t pnanoAddress = drjit_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);            
-            // jit_set_flag(JitFlag::Debug, false);
+
             
             result = m_Implementation.drjit_read_float(m_pnanoBuf, pnanoAddress, active);
-            // result = drjit_read_float(m_pnanoBuf, pnanoAddress);
-            
-            // drjit_root_tile_handle_t tile = drjit_root_find_tile(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &jitCoordData);
-            // result = tile.address.byte_offset;
-            // drjit_upper_handle_t child = drjit_root_get_child(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, tile);
-            // result = child.address.byte_offset;
-            
-            // drjit_address_t testAddress = {drjit::full<UInt64Jit>(44531060)};
-            // result = drjit_read_uint64(m_pnanoBuf, testAddress);
         } else {
             result = 0;
         }
-        
-
-// #endif
-        // drjit::LLVMArray<float> asd1temp = drjit::detach(p.x());
-        // float temp = (drjit::slice(asd1temp, 0));
-
-        // pnanovdb_address_t pnanoAddress = pnanovdb_root_get_value_address(m_pnanoGridType, m_pnanoBuf, m_pnanoRootHandle, &pnanoCoordinateTest);
-        // // uint64_t offset = pnanoAddress.byte_offset;
-
-        // float pnanoValue = pnanovdb_read_float(m_pnanoBuf, pnanoAddress);
-
-        // UInt64ArrayC jitOffsets = drjit::zeros<UInt64ArrayC>(p.x()[0]);
-        // for (auto i = 0; i < p.shape()[0]; ++i) 
-        // {
-        //     
-        //     pnanovdb_address_t pnanoAddress = pnanovdb_root_get_value_address(pnanoGridType, pnanoBuf, pnanoRootHandle, &pnanoCoordinateTest);
-        //     uint64_t offset = pnanoAddress.byte_offset;
-
-        //     // Record the offset both to the int + UInt32Jit
-        //     recordedOffsets[i] = offset;
-        //     jitOffsets.data()[i] = offset >> 2u;
-        // }
-
-        // // Then run a gather by indices
-        // FloatArrayL dataGather = drjit::gather<FloatJit>(m_dataCopy, jitOffsets);
 
         return result;
 }
@@ -245,11 +192,6 @@ public:
     ScalarFloat max() const override { 
         return m_max;
     }
-
-    // void max_per_channel(ScalarFloat *out) const override {
-    //     for (size_t i=0; i<m_max_per_channel.size(); ++i)
-    //         out[i] = m_max_per_channel[i];
-    // }
 
     ScalarVector3i resolution() const override {
         auto minBboxVdb = m_bboxVdb.min();
@@ -269,13 +211,11 @@ public:
             << "  dimensions = " << resolution() << "," << std::endl
             << "  min = " << m_min << "," << std::endl
             << "  max = " << m_max << "," << std::endl
-            // << "  channels = " << m_texture.shape()[3] << std::endl
             << "]";
         return oss.str();
     }
 
-    void traverse(TraversalCallback *callback) override {   
-        // callback->put_parameter("data", m_texture.tensor(), +ParamFlags::Differentiable);
+    void traverse(TraversalCallback *callback) override {
         Base::traverse(callback);
     }
 
@@ -284,41 +224,10 @@ public:
 protected:
     virtual ~GridPnano() = default;
 
-    // /**
-    //  * \brief Returns the number of channels in the grid
-    //  *
-    //  * For object instances that perform spectral upsampling, the channel that
-    //  * holds all scaling coefficients is omitted.
-    //  */
-    // MI_INLINE size_t nchannels() const {
-    //     const size_t channels = m_texture.shape()[3];
-    //     // When spectral upsampling is requested, a fourth channel is added to
-    //     // the internal texture data to handle scaling coefficients.
-    //     if (is_spectral_v<Spectrum> && channels == 4 && !m_raw)
-    //         return 3;
-
-    //     return channels;
-    // }
-
-    // uint32_t m_byteSize;
-    // uint32_t m_floatSize;
-
 // DrJit implementation -> LLVM, CUDA support
     DrJitImplementation<Float, Spectrum> m_Implementation;
     typename DrJitImplementation<Float, Spectrum>::drjit_buf_t m_pnanoBuf;
     typename DrJitImplementation<Float, Spectrum>::drjit_grid_type_t m_pnanoGridType;
-    // drjit_buf_t m_pnanoBuf;
-    // drjit_grid_type_t m_pnanoGridType;
-    // drjit_grid_handle_t m_pnanoGridHandle;
-    // drjit_tree_handle_t m_pnanoTreeHandle;
-    // drjit_root_handle_t m_pnanoRootHandle;
-
-// Scalar support
-    
-    
-    // DrJIT memcopy for the buffer size
-    // Float m_dataCopy;
-    // Texture3f m_texture;
 
     nanovdb::BBoxR m_bboxVdb;
     
@@ -334,6 +243,6 @@ protected:
 };
 
 MI_IMPLEMENT_CLASS_VARIANT(GridPnano, Volume)
-MI_EXPORT_PLUGIN(GridPnano, "GridTest texture")
+MI_EXPORT_PLUGIN(GridPnano, "Grid PNanoVDB")
 
 NAMESPACE_END(mitsuba)
